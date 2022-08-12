@@ -32,6 +32,11 @@ let
       default = "/var/lib/minimint";
       description = "The data directory for minimint.";
     };
+    dbDir = mkOption {
+      type = types.path;
+      default = "/var/lib/minimint/mint-0.db";
+      description = "The database directory for minimint.";
+    };
     user = mkOption {
       type = types.str;
       default = "clightning";
@@ -69,23 +74,26 @@ in {
       txindex = true;
       regtest = true;
     };
+    systemd.tmpfiles.rules = [
+      "d '${cfg.dataDir}' 0770 ${cfg.user} ${cfg.group} - -"
+      "d '${cfg.dbDir}' 0770 ${cfg.user} ${cfg.group} - -"
+    ];
     systemd.services.minimint = {
       wantedBy = [ "multi-user.target" ];
       requires = [ "bitcoind.service" ];
       after = [ "bitcoind.service" ];
       preStart = ''
-      mkdir -p ${cfg.dataDir} 
         ${config.nix-bitcoin.pkgs.minimint}/bin/configgen ${cfg.dataDir} 1 4000 5000 1 10 100 1000 10000 100000 1000000
-	sed -i -e "s/127.0.0.1:18443/${bitcoindRpcAddress}:${toString bitcoind.rpc.port}/g" ${cfg.dataDir}/server-0.json
-	sed -i -e 's/user": "bitcoin"/user": "${bitcoind.rpc.users.public.name}"/g' ${cfg.dataDir}/server-0.json
-	PASS=$(cat ${secretsDir}/bitcoin-rpcpassword-public)
-	sed -i -e "s/bitcoin/$PASS/g" ${cfg.dataDir}/server-0.json
+      	sed -i -e "s/127.0.0.1:18443/${bitcoindRpcAddress}:${toString bitcoind.rpc.port}/g" ${cfg.dataDir}/server-0.json
+      	sed -i -e 's/user": "bitcoin"/user": "${bitcoind.rpc.users.public.name}"/g' ${cfg.dataDir}/server-0.json
+      	PASS=$(cat ${secretsDir}/bitcoin-rpcpassword-public)
+      	sed -i -e "s/bitcoin/$PASS/g" ${cfg.dataDir}/server-0.json
       '';
       serviceConfig = nbLib.defaultHardening // {
       WorkingDirectory = cfg.dataDir;
       ExecStart = ''
-	${cfg.package}/bin/server ${cfg.dataDir}/server-0.json ${cfg.dataDir}/mint-0.db
-        '';
+      	${cfg.package}/bin/minimint ${cfg.dataDir}/server-0.json ${cfg.dataDir}/mint-0.db
+      '';
       User = cfg.user;
       Group = cfg.group;
       Restart = "on-failure";
